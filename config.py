@@ -9,8 +9,11 @@ API_HOST = "https://pc5ctup9mw.re.qweatherapi.com"
 # API Key
 API_KEY = "87cfafd40e8942fb898af54276b0bb49"
 
-# 聚合数据 API Key（新闻接口）
-JUHE_NEWS_KEY = "0efb4cd4cdc496bb05aacf1c432ef881"
+# 阿里云市场新闻 API 配置
+ALIYUN_NEWS_URL = os.getenv("ALIYUN_NEWS_URL", "https://lznews.market.alicloudapi.com/lundroid/news")
+ALIYUN_NEWS_APPCODE = os.getenv("ALIYUN_NEWS_APPCODE", "974d44fe8c3748d6be8ae902b55ed37b")
+ALIYUN_NEWS_APPKEY = os.getenv("ALIYUN_NEWS_APPKEY", "205014539")
+ALIYUN_NEWS_APPSECRET = os.getenv("ALIYUN_NEWS_APPSECRET", "Pv8qTFiUyg23QfiJUefZI6Wq3WbPBG2w")
 
 # 推送模式 — 内部服务器的地址（部署在局域网内其他机器上）
 INTERNAL_SERVER_URL = os.getenv("INTERNAL_SERVER_URL", "http://127.0.0.1:8000/api/info-feed")
@@ -26,10 +29,14 @@ LOCATIONS = [
     "101050101",  # 哈尔滨
 ]
 
-# 需要推送的新闻类型（留空默认推头条）
-NEWS_TYPES = ["guoji", "junshi", "keji"]
+# 需要推送的新闻频道。key 是主系统内部栏目名，channel 是阿里云 API 入参。
+NEWS_CHANNELS = [
+    {"key": "news", "label": "新闻", "channel": "新闻"},
+    {"key": "junshi", "label": "军事", "channel": "军事"},
+    {"key": "keji", "label": "科技", "channel": "科技"},
+]
 
-# 每个栏目最终推送到内网的新闻条数。pusher 会翻多页，过滤掉不想展示的来源后凑够该数量。
+# 每个栏目最终推送到内网的新闻条数。
 NEWS_TARGET_COUNT = 10
 NEWS_MAX_PAGES = 5
 

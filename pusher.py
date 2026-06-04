@@ -10,10 +10,11 @@ from urllib3.util.retry import Retry
 from config import (
     API_HOST,
     API_KEY,
-    JUHE_NEWS_KEY,
+    ALIYUN_NEWS_URL,
+    ALIYUN_NEWS_APPCODE,
     INTERNAL_SERVER_URL,
     LOCATIONS,
-    NEWS_TYPES,
+    NEWS_CHANNELS,
     NEWS_TARGET_COUNT,
     NEWS_MAX_PAGES,
     NEWS_SOURCE_BLOCKLIST,
@@ -39,6 +40,24 @@ def get_json(url, params, label):
         resp = SESSION.get(url, params=params, timeout=REQUEST_TIMEOUT)
         if resp.status_code != 200:
             print(f"  [WARN] {label} HTTP {resp.status_code}")
+            return None
+        return resp.json()
+    except Exception as e:
+        print(f"  [WARN] {label} 请求失败 — {e}")
+        return None
+
+
+def get_aliyun_news_json(params, label):
+    """请求阿里云市场新闻 API。"""
+    try:
+        resp = SESSION.get(
+            ALIYUN_NEWS_URL,
+            params=params,
+            headers={"Authorization": f"APPCODE {ALIYUN_NEWS_APPCODE}"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            print(f"  [WARN] {label} HTTP {resp.status_code} {resp.text[:160]}")
             return None
         return resp.json()
     except Exception as e:
@@ -136,34 +155,58 @@ def is_blocked_news(item):
     return any(word and word in text for word in NEWS_SOURCE_BLOCKLIST)
 
 
-def extract_news_items(data, ntype):
+def extract_news_items(data, channel):
     if not isinstance(data, dict):
-        print(f"  [WARN] 新闻列表响应不是对象 type={ntype}: {data}")
+        print(f"  [WARN] 新闻列表响应不是对象 channel={channel}: {data}")
         return []
-    result = data.get("result")
-    if not isinstance(result, dict):
-        code = data.get("error_code", data.get("code", "unknown"))
-        reason = data.get("reason") or data.get("msg") or "result 为空"
-        print(f"  [WARN] 新闻列表无有效 result type={ntype}: {code} {reason}")
+    resp = data.get("resp")
+    if isinstance(resp, dict) and str(resp.get("RespCode")) not in ("200", ""):
+        print(f"  [WARN] 新闻列表接口返回异常 channel={channel}: {resp}")
         return []
-    items = result.get("data")
+    items = data.get("data")
     if not isinstance(items, list):
-        print(f"  [WARN] 新闻列表 data 异常 type={ntype}: {items}")
+        print(f"  [WARN] 新闻列表 data 异常 channel={channel}: {items}")
         return []
     return items
 
 
-def fetch_news_page(ntype, page):
-    data = get_json("https://v.juhe.cn/toutiao/index", {
-        "key": JUHE_NEWS_KEY,
-        "type": ntype,
+def normalize_aliyun_news_item(item, category_key, category_label):
+    docid = item.get("docid") or item.get("url") or item.get("title") or ""
+    title = item.get("title") or ""
+    digest = item.get("digest") or ""
+    image_url = item.get("imgsrc") or ""
+    return {
+        "uniquekey": docid,
+        "title": title,
+        "date": item.get("ptime") or "",
+        "category": category_label,
+        "type": category_key,
+        "author_name": item.get("source") or "",
+        "url": item.get("url") or item.get("skipURL") or "",
+        "thumbnail_pic_s": image_url,
+        "digest": digest,
+        "content": f"<p>{digest}</p>" if digest else "",
+        "raw": item,
+    }
+
+
+def make_news_list_payload(items):
+    return {
+        "stat": "1",
+        "result": {
+            "data": items,
+        },
+    }
+
+
+def fetch_news_page(channel, page):
+    data = get_aliyun_news_json({
+        "channel": channel,
         "page": str(page),
-        "page_size": str(NEWS_TARGET_COUNT),
-        "is_filter": "0",
-    }, f"新闻列表 {ntype} 第{page}页")
+    }, f"新闻列表 {channel} 第{page}页")
     if not data:
         return None
-    if not extract_news_items(data, ntype):
+    if not extract_news_items(data, channel):
         return None
     return data
 
@@ -171,20 +214,20 @@ def fetch_news_page(ntype, page):
 def fetch_and_push_news():
     print("\n===== 新闻数据 =====\n")
 
-    # 先推送新闻列表
-    for ntype in NEWS_TYPES:
-        print(f"[新闻] 列表 type={ntype}")
-        data = None
+    for channel_cfg in NEWS_CHANNELS:
+        ntype = channel_cfg["key"]
+        label = channel_cfg["label"]
+        channel = channel_cfg["channel"]
+        print(f"[新闻] 列表 channel={channel}")
         items = []
         seen_keys = set()
         for page in range(1, NEWS_MAX_PAGES + 1):
-            page_data = fetch_news_page(ntype, page)
+            page_data = fetch_news_page(channel, page)
             if not page_data:
                 continue
-            if data is None:
-                data = page_data
-            page_items = extract_news_items(page_data, ntype)
-            for item in page_items:
+            page_items = extract_news_items(page_data, channel)
+            for raw_item in page_items:
+                item = normalize_aliyun_news_item(raw_item, ntype, label)
                 key = item.get("uniquekey") or item.get("title")
                 if not key or key in seen_keys:
                     continue
@@ -198,58 +241,26 @@ def fetch_and_push_news():
             if len(items) >= NEWS_TARGET_COUNT:
                 break
 
-        if not data:
+        if not items:
             continue
-        data.setdefault("result", {})["data"] = items
         print(f"  获取到 {len(items)} 条新闻")
 
         # 列表缩略图也需要换成内网地址，否则无公网权限的客户端无法显示。
         for item in items:
-            for thumb_field in ["thumbnail_pic_s", "thumbnail_pic_s02", "thumbnail_pic_s03"]:
+            for thumb_field in ["thumbnail_pic_s"]:
                 thumb = item.get(thumb_field, "")
                 if thumb and thumb.startswith("http"):
                     internal_url = upload_media(thumb)
                     if internal_url:
                         item[thumb_field] = internal_url
 
-        push_data("news:list", f"{ntype}:1", data)
-
-        # 逐条获取详情
+        push_data("news:list", f"{ntype}:1", make_news_list_payload(items))
         for item in items:
             uk = item.get("uniquekey", "")
             if not uk:
                 continue
-
             print(f"  详情: {item.get('title', '')[:30]}...")
-            detail = get_json("https://v.juhe.cn/toutiao/content", {
-                "key": JUHE_NEWS_KEY,
-                "uniquekey": uk,
-            }, f"新闻详情 {uk}")
-            if not detail:
-                continue
-
-            # 处理正文中的图片
-            content = detail.get("result", {}).get("content", "")
-            if content:
-                # 找到所有 <img src="..."> 或 <img src='...'>
-                img_urls = re.findall(r'''src=['"]([^'"]+)['"]''', content)
-                for img_url in img_urls:
-                    if not img_url.startswith("http"):
-                        continue
-                    internal_url = upload_media(img_url)
-                    if internal_url:
-                        content = content.replace(img_url, internal_url)
-                detail["result"]["content"] = content
-
-            # 处理缩略图
-            for thumb_field in ["thumbnail_pic_s", "thumbnail_pic_s02", "thumbnail_pic_s03"]:
-                thumb = detail.get("result", {}).get(thumb_field, "")
-                if thumb and thumb.startswith("http"):
-                    internal_url = upload_media(thumb)
-                    if internal_url:
-                        detail["result"][thumb_field] = internal_url
-
-            push_data("news:detail", uk, detail.get("result", {}))
+            push_data("news:detail", uk, item)
             print(f"    推送完成")
 
 
@@ -260,7 +271,7 @@ def fetch_and_push_news():
 if __name__ == "__main__":
     print(f"目标服务器: {INTERNAL_SERVER_URL}")
     print(f"天气城市数: {len(LOCATIONS)}")
-    print(f"新闻类型数: {len(NEWS_TYPES)}")
+    print(f"新闻频道数: {len(NEWS_CHANNELS)}")
 
     fetch_and_push_weather()
     fetch_and_push_news()
