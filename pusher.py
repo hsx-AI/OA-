@@ -3,25 +3,24 @@
 定时从上游 API 抓取天气/新闻数据，下载图片，推送到内部服务器
 """
 import argparse
+from email.utils import parsedate_to_datetime
 import html as html_lib
 import time
 from datetime import datetime, timedelta
 import requests
 import re
 import hashlib
+import xml.etree.ElementTree as ET
 from urllib.parse import urljoin
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from config import (
     API_HOST,
     API_KEY,
-    ALIYUN_NEWS_URL,
-    ALIYUN_NEWS_APPCODE,
     INTERNAL_SERVER_URL,
     LOCATIONS,
     NEWS_CHANNELS,
     NEWS_TARGET_COUNT,
-    NEWS_MAX_PAGES,
     NEWS_SOURCE_BLOCKLIST,
     PUSH_SCHEDULE_TIMES,
     RUN_ON_START,
@@ -64,24 +63,6 @@ def get_json(url, params, label):
         resp = SESSION.get(url, params=params, timeout=REQUEST_TIMEOUT)
         if resp.status_code != 200:
             print(f"  [WARN] {label} HTTP {resp.status_code}")
-            return None
-        return resp.json()
-    except Exception as e:
-        print(f"  [WARN] {label} 请求失败 — {e}")
-        return None
-
-
-def get_aliyun_news_json(params, label):
-    """请求阿里云市场新闻 API。"""
-    try:
-        resp = SESSION.get(
-            ALIYUN_NEWS_URL,
-            params=params,
-            headers={"Authorization": f"APPCODE {ALIYUN_NEWS_APPCODE}"},
-            timeout=REQUEST_TIMEOUT,
-        )
-        if resp.status_code != 200:
-            print(f"  [WARN] {label} HTTP {resp.status_code} {resp.text[:160]}")
             return None
         return resp.json()
     except Exception as e:
@@ -292,38 +273,59 @@ def is_blocked_news(item):
     return any(word and word in text for word in NEWS_SOURCE_BLOCKLIST)
 
 
-def extract_news_items(data, channel):
-    if not isinstance(data, dict):
-        print(f"  [WARN] 新闻列表响应不是对象 channel={channel}: {data}")
-        return []
-    resp = data.get("resp")
-    if isinstance(resp, dict) and str(resp.get("RespCode")) not in ("200", ""):
-        print(f"  [WARN] 新闻列表接口返回异常 channel={channel}: {resp}")
-        return []
-    items = data.get("data")
-    if not isinstance(items, list):
-        print(f"  [WARN] 新闻列表 data 异常 channel={channel}: {items}")
-        return []
-    return items
+def strip_html_text(value):
+    value = html_lib.unescape(value or "")
+    value = re.sub(r"(?is)<script\b[^>]*>.*?</script>", "", value)
+    value = re.sub(r"(?is)<style\b[^>]*>.*?</style>", "", value)
+    value = re.sub(r"(?is)<[^>]+>", "", value)
+    return re.sub(r"\s+", " ", value).strip()
 
 
-def normalize_aliyun_news_item(item, category_key, category_label):
-    docid = item.get("docid") or item.get("url") or item.get("title") or ""
-    title = item.get("title") or ""
-    digest = item.get("digest") or ""
-    image_url = item.get("imgsrc") or ""
+def extract_first_image(value):
+    if not value:
+        return ""
+    match = re.search(r'''(?is)<img\b[^>]*\bsrc\s*=\s*['"]?([^'">\s]+)''', value)
+    if not match:
+        return ""
+    return html_lib.unescape(match.group(1).strip())
+
+
+def format_rss_date(value):
+    if not value:
+        return ""
+    try:
+        dt = parsedate_to_datetime(value)
+        if dt.tzinfo:
+            dt = dt.astimezone()
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return value
+
+
+def normalize_rss_news_item(item, category_key, category_label):
+    title = strip_html_text(item.findtext("title"))
+    link = (item.findtext("link") or "").strip()
+    pub_date = (item.findtext("pubDate") or "").strip()
+    description_html = item.findtext("description") or ""
+    digest = strip_html_text(description_html)
+    image_url = extract_first_image(description_html)
+    uniquekey = hashlib.md5((link or f"{title}:{pub_date}").encode("utf-8")).hexdigest()
     return {
-        "uniquekey": docid,
+        "uniquekey": uniquekey,
         "title": title,
-        "date": item.get("ptime") or "",
+        "date": format_rss_date(pub_date),
         "category": category_label,
         "type": category_key,
-        "author_name": item.get("source") or "",
-        "url": item.get("url") or item.get("skipURL") or "",
+        "author_name": "中国新闻网",
+        "url": link,
         "thumbnail_pic_s": image_url,
         "digest": digest,
         "content": f"<p>{digest}</p>" if digest else "",
-        "raw": item,
+        "raw": {
+            "source": "chinanews_rss",
+            "pubDate": pub_date,
+            "description": description_html,
+        },
     }
 
 
@@ -336,16 +338,18 @@ def make_news_list_payload(items):
     }
 
 
-def fetch_news_page(channel, page):
-    data = get_aliyun_news_json({
-        "channel": channel,
-        "page": str(page),
-    }, f"新闻列表 {channel} 第{page}页")
-    if not data:
-        return None
-    if not extract_news_items(data, channel):
-        return None
-    return data
+def fetch_rss_news_items(rss_url, label):
+    try:
+        resp = SESSION.get(rss_url, timeout=REQUEST_TIMEOUT)
+        if resp.status_code != 200:
+            print(f"  [WARN] RSS {label} HTTP {resp.status_code} {resp.text[:120]}")
+            return []
+        resp.encoding = resp.apparent_encoding or resp.encoding
+        root = ET.fromstring(resp.text)
+        return root.findall(".//item")
+    except Exception as e:
+        print(f"  [WARN] RSS {label} 请求失败 — {e}")
+        return []
 
 
 def fetch_and_push_news():
@@ -356,27 +360,21 @@ def fetch_and_push_news():
     for channel_cfg in NEWS_CHANNELS:
         ntype = channel_cfg["key"]
         label = channel_cfg["label"]
-        channel = channel_cfg["channel"]
-        print(f"[新闻] 列表 channel={channel}")
+        rss_url = channel_cfg["rss_url"]
+        print(f"[新闻] RSS {label}: {rss_url}")
         items = []
         seen_keys = set()
-        for page in range(1, NEWS_MAX_PAGES + 1):
-            page_data = fetch_news_page(channel, page)
-            if not page_data:
+        rss_items = fetch_rss_news_items(rss_url, label)
+        for raw_item in rss_items:
+            item = normalize_rss_news_item(raw_item, ntype, label)
+            key = item.get("uniquekey") or item.get("title")
+            if not key or key in seen_keys:
                 continue
-            page_items = extract_news_items(page_data, channel)
-            for raw_item in page_items:
-                item = normalize_aliyun_news_item(raw_item, ntype, label)
-                key = item.get("uniquekey") or item.get("title")
-                if not key or key in seen_keys:
-                    continue
-                seen_keys.add(key)
-                if is_blocked_news(item):
-                    print(f"  [SKIP] 过滤来源: {(item.get('author_name') or '')} - {(item.get('title') or '')[:28]}")
-                    continue
-                items.append(item)
-                if len(items) >= NEWS_TARGET_COUNT:
-                    break
+            seen_keys.add(key)
+            if is_blocked_news(item):
+                print(f"  [SKIP] 过滤来源: {(item.get('author_name') or '')} - {(item.get('title') or '')[:28]}")
+                continue
+            items.append(item)
             if len(items) >= NEWS_TARGET_COUNT:
                 break
 
