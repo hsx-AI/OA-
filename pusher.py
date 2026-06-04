@@ -136,6 +136,23 @@ def is_blocked_news(item):
     return any(word and word in text for word in NEWS_SOURCE_BLOCKLIST)
 
 
+def extract_news_items(data, ntype):
+    if not isinstance(data, dict):
+        print(f"  [WARN] 新闻列表响应不是对象 type={ntype}: {data}")
+        return []
+    result = data.get("result")
+    if not isinstance(result, dict):
+        code = data.get("error_code", data.get("code", "unknown"))
+        reason = data.get("reason") or data.get("msg") or "result 为空"
+        print(f"  [WARN] 新闻列表无有效 result type={ntype}: {code} {reason}")
+        return []
+    items = result.get("data")
+    if not isinstance(items, list):
+        print(f"  [WARN] 新闻列表 data 异常 type={ntype}: {items}")
+        return []
+    return items
+
+
 def fetch_news_page(ntype, page):
     data = get_json("https://v.juhe.cn/toutiao/index", {
         "key": JUHE_NEWS_KEY,
@@ -146,9 +163,7 @@ def fetch_news_page(ntype, page):
     }, f"新闻列表 {ntype} 第{page}页")
     if not data:
         return None
-    items = data.get("result", {}).get("data", [])
-    if not isinstance(items, list):
-        print(f"  [WARN] 新闻列表响应异常 type={ntype}: {data}")
+    if not extract_news_items(data, ntype):
         return None
     return data
 
@@ -168,7 +183,7 @@ def fetch_and_push_news():
                 continue
             if data is None:
                 data = page_data
-            page_items = page_data.get("result", {}).get("data", [])
+            page_items = extract_news_items(page_data, ntype)
             for item in page_items:
                 key = item.get("uniquekey") or item.get("title")
                 if not key or key in seen_keys:
