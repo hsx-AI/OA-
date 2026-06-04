@@ -27,8 +27,14 @@ LOCATIONS = [
 NEWS_CHANNELS = [
     {"key": "scroll", "label": "即时", "rss_url": "https://www.chinanews.com.cn/rss/scroll-news.xml"},
     {"key": "import", "label": "要闻", "rss_url": "https://www.chinanews.com.cn/rss/importnews.xml"},
+    {"key": "politics", "label": "时政", "rss_url": "https://www.chinanews.com.cn/rss/china.xml"},
     {"key": "world", "label": "国际", "rss_url": "https://www.chinanews.com.cn/rss/world.xml"},
     {"key": "finance", "label": "财经", "rss_url": "https://www.chinanews.com.cn/rss/finance.xml"},
+    {"key": "society", "label": "社会", "rss_url": "https://www.chinanews.com.cn/rss/society.xml"},
+    {"key": "life", "label": "生活", "rss_url": "https://www.chinanews.com.cn/rss/life.xml"},
+    {"key": "health", "label": "健康", "rss_url": "https://www.chinanews.com.cn/rss/health.xml"},
+    {"key": "ent", "label": "文娱", "rss_url": "https://www.chinanews.com.cn/rss/culture.xml"},
+    {"key": "sports", "label": "体育", "rss_url": "https://www.chinanews.com.cn/rss/sports.xml"},
 ]
 
 # 每个栏目最终推送到内网的新闻条数。
