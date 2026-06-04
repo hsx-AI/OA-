@@ -16,7 +16,7 @@ ALIYUN_NEWS_APPKEY = os.getenv("ALIYUN_NEWS_APPKEY", "205014539")
 ALIYUN_NEWS_APPSECRET = os.getenv("ALIYUN_NEWS_APPSECRET", "Pv8qTFiUyg23QfiJUefZI6Wq3WbPBG2w")
 
 # 推送模式 — 内部服务器的地址（部署在局域网内其他机器上）
-INTERNAL_SERVER_URL = os.getenv("INTERNAL_SERVER_URL", "http://127.0.0.1:8000/api/info-feed")
+INTERNAL_SERVER_URL = os.getenv("INTERNAL_SERVER_URL", "10.42.60.230:8000/api/info-feed")
 
 # 需要定时推送天气的城市 LocationID 列表
 LOCATIONS = [
@@ -42,3 +42,12 @@ NEWS_MAX_PAGES = 5
 
 # 来源黑名单。当前只推国际、军事、科技，先不额外过滤来源。
 NEWS_SOURCE_BLOCKLIST = []
+
+# 长期运行模式：每天早、中、晚三次推送。格式为 HH:MM，使用运行 pusher 电脑的本地时间。
+PUSH_SCHEDULE_TIMES = ["07:30", "12:30", "18:30"]
+
+# 服务启动时是否先立即推送一次；设置为 False 则等到下一个计划时间。
+RUN_ON_START = True
+
+# 每次推送新闻前清理主系统旧新闻详情和旧图片，避免缓存长期留存。
+CLEAR_NEWS_CACHE_BEFORE_PUSH = True
