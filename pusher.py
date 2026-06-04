@@ -3,6 +3,7 @@
 定时从上游 API 抓取天气/新闻数据，下载图片，推送到内部服务器
 """
 import argparse
+import html as html_lib
 import time
 from datetime import datetime, timedelta
 import requests
@@ -47,6 +48,16 @@ SESSION.mount(
 )
 
 
+def normalize_base_url(url):
+    value = (url or "").strip().rstrip("/")
+    if value and not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", value):
+        value = "http://" + value
+    return value
+
+
+INTERNAL_BASE_URL = normalize_base_url(INTERNAL_SERVER_URL)
+
+
 def get_json(url, params, label):
     """请求上游 JSON；单次失败只影响当前条目，不中断整轮推送。"""
     try:
@@ -82,7 +93,7 @@ def push_data(data_type, key, data):
     """推送 JSON 数据到内部服务器"""
     try:
         resp = SESSION.post(
-            f"{INTERNAL_SERVER_URL}/push/data",
+            f"{INTERNAL_BASE_URL}/push/data",
             json={"type": data_type, "key": key, "data": data},
             timeout=REQUEST_TIMEOUT
         )
@@ -98,7 +109,7 @@ def push_data(data_type, key, data):
 def clear_remote_cache(scope="news", clear_media=True):
     try:
         resp = SESSION.post(
-            f"{INTERNAL_SERVER_URL}/push/clear",
+            f"{INTERNAL_BASE_URL}/push/clear",
             json={"scope": scope, "clear_media": clear_media},
             timeout=REQUEST_TIMEOUT,
         )
@@ -118,6 +129,11 @@ def clear_remote_cache(scope="news", clear_media=True):
 def upload_media(img_url):
     """下载外网图片并上传到内部服务器，返回内部访问地址"""
     try:
+        img_url = html_lib.unescape((img_url or "").strip())
+        if img_url.startswith("//"):
+            img_url = "https:" + img_url
+        if not img_url:
+            return None
         # 下载图片
         resp = SESSION.get(img_url, timeout=REQUEST_TIMEOUT, stream=True)
         if resp.status_code != 200:
@@ -135,9 +151,9 @@ def upload_media(img_url):
 
         # 上传到内部服务器
         files = {"file": (name, img_data, "image/" + ext)}
-        resp = SESSION.post(f"{INTERNAL_SERVER_URL}/push/media", files=files, data={"name": name}, timeout=REQUEST_TIMEOUT)
+        resp = SESSION.post(f"{INTERNAL_BASE_URL}/push/media", files=files, data={"name": name}, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
-            return f"{INTERNAL_SERVER_URL}/uploads/{name}"
+            return f"{INTERNAL_BASE_URL}/uploads/{name}"
     except Exception as e:
         print(f"  [WARN] 图片上传失败: {img_url[:80]} — {e}")
     return None
@@ -190,7 +206,7 @@ def find_article_fragment(html):
 def rewrite_article_images(html, base_url):
     def replace_src(match):
         prefix = match.group(1)
-        src = match.group(2).strip()
+        src = html_lib.unescape(match.group(2).strip())
         if src.startswith("data:"):
             return match.group(0)
         absolute = urljoin(base_url, src)
@@ -400,7 +416,7 @@ def fetch_and_push_news():
 # ============================================================
 
 def run_once():
-    print(f"目标服务器: {INTERNAL_SERVER_URL}")
+    print(f"目标服务器: {INTERNAL_BASE_URL}")
     print(f"天气城市数: {len(LOCATIONS)}")
     print(f"新闻频道数: {len(NEWS_CHANNELS)}")
 

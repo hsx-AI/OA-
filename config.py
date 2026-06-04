@@ -16,7 +16,7 @@ ALIYUN_NEWS_APPKEY = os.getenv("ALIYUN_NEWS_APPKEY", "205014539")
 ALIYUN_NEWS_APPSECRET = os.getenv("ALIYUN_NEWS_APPSECRET", "Pv8qTFiUyg23QfiJUefZI6Wq3WbPBG2w")
 
 # 推送模式 — 内部服务器的地址（部署在局域网内其他机器上）
-INTERNAL_SERVER_URL = os.getenv("INTERNAL_SERVER_URL", "10.42.60.230:8000/api/info-feed")
+INTERNAL_SERVER_URL = os.getenv("INTERNAL_SERVER_URL", "http://10.42.60.230:8000/api/info-feed")
 
 # 需要定时推送天气的城市 LocationID 列表
 LOCATIONS = [
@@ -31,7 +31,6 @@ LOCATIONS = [
 
 # 需要推送的新闻频道。key 是主系统内部栏目名，channel 是阿里云 API 入参。
 NEWS_CHANNELS = [
-    {"key": "news", "label": "新闻", "channel": "新闻"},
     {"key": "junshi", "label": "军事", "channel": "军事"},
     {"key": "keji", "label": "科技", "channel": "科技"},
 ]
