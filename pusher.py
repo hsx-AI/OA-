@@ -162,16 +162,43 @@ def clean_article_html(html):
     return html.strip()
 
 
+def extract_balanced_div_by_class(html, class_name):
+    pattern = re.compile(
+        rf'''(?is)<div\b[^>]*class\s*=\s*["'][^"']*\b{re.escape(class_name)}\b[^"']*["'][^>]*>'''
+    )
+    match = pattern.search(html)
+    if not match:
+        return ""
+    start = match.end()
+    depth = 1
+    for tag in re.finditer(r"(?is)</?div\b[^>]*>", html[start:]):
+        tag_text = tag.group(0)
+        if tag_text.startswith("</"):
+            depth -= 1
+            if depth == 0:
+                return html[start:start + tag.start()]
+        else:
+            depth += 1
+    return html[start:]
+
+
+def cleanup_chinanews_article_fragment(fragment):
+    if not fragment:
+        return ""
+    fragment = re.sub(r"(?is)<table\b[^>]*>.*?(?:责任编辑|编辑|【编辑).*?</table>", "", fragment)
+    fragment = re.sub(r"(?is)<div\b[^>]*(?:id|class)=['\"][^'\"]*(?:function|share|page|editor|ad|adv)[^'\"]*['\"][^>]*>.*?</div>", "", fragment)
+    fragment = re.sub(r"(?is)<p[^>]*>\s*(?:责任编辑|【编辑).*?</p>", "", fragment)
+    fragment = re.sub(r"(?is)(?:责任编辑|【编辑)[^<]*", "", fragment)
+    return fragment.strip()
+
+
 def find_article_fragment(html):
     """从网页里尽量截取正文区域；失败时返回 body。"""
     if not html:
         return ""
-    chinanews = re.search(
-        r'''(?is)<div\b[^>]*class\s*=\s*["'][^"']*\bleft_zw\b[^"']*["'][^>]*>(.*?)(?:<table\b|<!--\s*正文end|<div\b[^>]*class\s*=\s*["'][^"']*clear[^"']*["'])''',
-        html,
-    )
+    chinanews = extract_balanced_div_by_class(html, "left_zw")
     if chinanews:
-        return chinanews.group(1)
+        return cleanup_chinanews_article_fragment(chinanews)
     candidates = [
         r"(?is)<article\b[^>]*>.*?</article>",
         r"(?is)<div\b[^>]*(?:id|class)=['\"][^'\"]*(?:article|content|main|post|text|detail)[^'\"]*['\"][^>]*>.*?</div>",
