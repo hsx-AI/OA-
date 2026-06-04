@@ -1,3 +1,5 @@
+import os
+
 # 和风天气 API 配置
 # 在 https://console.qweather.com 的"项目管理"中查看你的配置
 
@@ -11,7 +13,7 @@ API_KEY = "87cfafd40e8942fb898af54276b0bb49"
 JUHE_NEWS_KEY = "0efb4cd4cdc496bb05aacf1c432ef881"
 
 # 推送模式 — 内部服务器的地址（部署在局域网内其他机器上）
-INTERNAL_SERVER_URL = "http://127.0.0.1:5000"
+INTERNAL_SERVER_URL = os.getenv("INTERNAL_SERVER_URL", "http://127.0.0.1:8000/api/info-feed")
 
 # 需要定时推送天气的城市 LocationID 列表
 LOCATIONS = [
@@ -25,4 +27,4 @@ LOCATIONS = [
 ]
 
 # 需要推送的新闻类型（留空默认推头条）
-NEWS_TYPES = ["top", "guonei", "keji"]
+NEWS_TYPES = ["top", "guonei", "guoji", "caijing", "yule", "tiyu", "junshi", "keji", "shehui"]

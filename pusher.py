@@ -98,11 +98,19 @@ def fetch_and_push_news():
             continue
         data = r.json()
 
-        # 推送列表（原始数据，不做图片代理）
-        push_data("news:list", f"{ntype}:1", data)
-
         items = data.get("result", {}).get("data", [])
         print(f"  获取到 {len(items)} 条新闻")
+
+        # 列表缩略图也需要换成内网地址，否则无公网权限的客户端无法显示。
+        for item in items:
+            for thumb_field in ["thumbnail_pic_s", "thumbnail_pic_s02", "thumbnail_pic_s03"]:
+                thumb = item.get(thumb_field, "")
+                if thumb and thumb.startswith("http"):
+                    internal_url = upload_media(thumb)
+                    if internal_url:
+                        item[thumb_field] = internal_url
+
+        push_data("news:list", f"{ntype}:1", data)
 
         # 逐条获取详情
         for item in items:
