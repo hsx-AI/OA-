@@ -166,6 +166,12 @@ def find_article_fragment(html):
     """从网页里尽量截取正文区域；失败时返回 body。"""
     if not html:
         return ""
+    chinanews = re.search(
+        r'''(?is)<div\b[^>]*class\s*=\s*["'][^"']*\bleft_zw\b[^"']*["'][^>]*>(.*?)(?:<table\b|<!--\s*正文end|<div\b[^>]*class\s*=\s*["'][^"']*clear[^"']*["'])''',
+        html,
+    )
+    if chinanews:
+        return chinanews.group(1)
     candidates = [
         r"(?is)<article\b[^>]*>.*?</article>",
         r"(?is)<div\b[^>]*(?:id|class)=['\"][^'\"]*(?:article|content|main|post|text|detail)[^'\"]*['\"][^>]*>.*?</div>",
