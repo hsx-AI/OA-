@@ -28,3 +28,11 @@ LOCATIONS = [
 
 # 需要推送的新闻类型（留空默认推头条）
 NEWS_TYPES = ["top", "guonei", "guoji", "caijing", "yule", "tiyu", "junshi", "keji", "shehui"]
+
+# 每个栏目最终推送到内网的新闻条数。pusher 会翻多页，过滤掉不想展示的来源后凑够该数量。
+NEWS_TARGET_COUNT = 10
+NEWS_MAX_PAGES = 5
+
+# 聚合“新闻头条”接口不支持地区参数，国内栏目偶尔会被地方站点刷屏。
+# 这里先默认过滤鲁网；如需保留，改成空列表 []。
+NEWS_SOURCE_BLOCKLIST = ["鲁网"]
